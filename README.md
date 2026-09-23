@@ -1,5 +1,7 @@
 # 🌬️ Blush Lüftungsempfehlung
 
+> ⚠️ **Status: Testphase** – dieses Projekt befindet sich noch in aktiver Entwicklung/Erprobung. Funktionen, Konfiguration und Berechnungen können sich noch ändern.
+
 Eine Custom Lovelace Card für [Home Assistant](https://www.home-assistant.io/), die anhand von Innen- und Außensensoren eine **fundierte Lüftungsempfehlung** gibt — nicht nur "feucht/trocken", sondern eine echte Kosten-Nutzen-Abwägung.
 
 ## Warum diese Karte?
@@ -84,9 +86,9 @@ show_mold_warning: true
 2. **Differenz** (innen − außen) bestimmt die Grundrichtung:
    - ≤ −0,5 g/m³ → ❌ Nicht lüften
    - −0,5 … +0,5 g/m³ → ➖ Kein großer Unterschied
-   - \> +0,5 g/m³ → Nutzen vorhanden, weiter zu Schritt 3
+   - > +0,5 g/m³ → Nutzen vorhanden, weiter zu Schritt 3
 3. **Kosten-Nutzen-Verhältnis**: geschätzter Wärmeverlust (Wh, über die volumetrische Wärmekapazität von Luft ≈ 0,34 Wh/(m³·K)) geteilt durch die entfernte Wassermenge (g)
-   - \> 4 Wh/g → ⚖️ Abwägen – lohnt sich kaum
+   - > 4 Wh/g → ⚖️ Abwägen – lohnt sich kaum
    - ≤ 4 Wh/g → ✅ Lüften empfohlen, mit Dauer-Schätzung (`18 / √ΔT` Minuten, durch Wind verkürzt)
 
 ## Bekannte Grenzen
