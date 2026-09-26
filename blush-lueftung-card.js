@@ -21,11 +21,11 @@ class BlushLueftungCard extends HTMLElement {
   static getConfigElement() { return document.createElement('blush-lueftung-card-editor'); }
   static getStubConfig() {
     return {
-      name: '', temp_out: '', hum_out: '', temp_in: '', hum_in: '', wind: '',
+      name: '', temp_out: '', hum_out: '', temp_in: '', hum_in: '',
       window: [], cooldown_minutes: 30,
       room_volume_m3: 50, room_volume_is_estimate: true,
       target_humidity: 55, min_humidity: 40,
-      show_columns: true, show_dewpoint: true, show_wind: true, show_trend: true,
+      show_columns: true, show_dewpoint: true, show_trend: true,
       show_balance: true, show_heat_loss: true, show_mold_warning: true,
     };
   }
@@ -35,7 +35,6 @@ class BlushLueftungCard extends HTMLElement {
       name: config.name || '',
       temp_out: config.temp_out || '', hum_out: config.hum_out || '',
       temp_in: config.temp_in || '', hum_in: config.hum_in || '',
-      wind: config.wind || '',
       window: win,
       cooldown_minutes: Math.min(180, Math.max(0, config.cooldown_minutes ?? 30)),
       room_volume_m3: Math.max(1, config.room_volume_m3 || 50),
@@ -44,7 +43,6 @@ class BlushLueftungCard extends HTMLElement {
       min_humidity: Math.min(60, Math.max(20, config.min_humidity || 40)),
       show_columns: config.show_columns !== false,
       show_dewpoint: config.show_dewpoint !== false,
-      show_wind: config.show_wind !== false,
       show_trend: config.show_trend !== false,
       show_balance: config.show_balance !== false,
       show_heat_loss: config.show_heat_loss !== false,
@@ -66,7 +64,6 @@ class BlushLueftungCard extends HTMLElement {
     this.content.balance.style.display = c.show_balance ? 'flex' : 'none';
     this.content.outDpRow.style.display = c.show_dewpoint ? 'flex' : 'none';
     this.content.inDpRow.style.display = c.show_dewpoint ? 'flex' : 'none';
-    this.content.outWindRow.style.display = (c.show_wind && c.wind) ? 'flex' : 'none';
     this.content.inWinRow.style.display = c.window.length ? 'flex' : 'none';
     ['outTrendIcon', 'outTrendLabel', 'inTrendIcon', 'inTrendLabel'].forEach((k) => {
       this.content[k].style.display = c.show_trend ? '' : 'none';
@@ -102,11 +99,12 @@ class BlushLueftungCard extends HTMLElement {
     if (delta < -3) return { icon: 'mdi:trending-down', label: `${delta.toFixed(0)}%/20min` };
     return { icon: 'mdi:trending-neutral', label: 'stabil' };
   }
-  _ventDurationMinutes(tempDiffAbs, wind, fraction) {
+  _ventDurationMinutes(tempDiffAbs, fraction) {
+    // Stoßlüften: Luftaustausch durch thermischen Auftrieb, wächst mit ~√ΔT
     const base = 18 / Math.sqrt(Math.max(tempDiffAbs, 0.5));
-    const windFactor = (wind !== null && !isNaN(wind)) ? Math.max(0.5, 1 - wind * 0.02) : 1;
+    // Nur so lange wie nötig, um den Zielwert zu erreichen
     const needFactor = Math.max(0.35, Math.min(1, fraction));
-    return Math.min(25, Math.max(3, base * windFactor * needFactor));
+    return Math.min(25, Math.max(3, base * needFactor));
   }
   async _fetchLastVent(entityId, closedAt) {
     this._lastVentKey = closedAt;
@@ -143,7 +141,6 @@ class BlushLueftungCard extends HTMLElement {
     const hasRequired = c.temp_out && c.hum_out && c.temp_in && c.hum_in;
     const tOut = g(c.temp_out), rhOut = g(c.hum_out);
     const tIn = g(c.temp_in), rhIn = g(c.hum_in);
-    const wind = c.wind ? g(c.wind) : null;
 
     if (!this.content) {
       this.innerHTML = `
@@ -188,7 +185,6 @@ class BlushLueftungCard extends HTMLElement {
                 <div class="row"><span>Luftfeuchte</span><span class="val"><ha-icon id="out-trend-icon"></ha-icon><span id="out-rh-text"></span><span class="trend-label" id="out-trend-label"></span></span></div>
                 <div class="row"><span>Absolut</span><span class="val" id="out-ah"></span></div>
                 <div class="row" id="out-dp-row"><span>Taupunkt</span><span class="val" id="out-dp"></span></div>
-                <div class="row" id="out-wind-row"><span>Wind</span><span class="val" id="out-wind"></span></div>
               </div>
               <div class="col">
                 <div class="mold-badge" id="mold-badge"><ha-icon icon="mdi:mold"></ha-icon><span id="mold-badge-text"></span></div>
@@ -230,7 +226,7 @@ class BlushLueftungCard extends HTMLElement {
       this.content = {
         title: q('#card-title'), placeholder: q('#placeholder'), cols: q('#cols'),
         outTemp: q('#out-temp'), outRhText: q('#out-rh-text'), outTrendIcon: q('#out-trend-icon'), outTrendLabel: q('#out-trend-label'),
-        outAh: q('#out-ah'), outDp: q('#out-dp'), outDpRow: q('#out-dp-row'), outWind: q('#out-wind'), outWindRow: q('#out-wind-row'),
+        outAh: q('#out-ah'), outDp: q('#out-dp'), outDpRow: q('#out-dp-row'),
         inTemp: q('#in-temp'), inRhText: q('#in-rh-text'), inTrendIcon: q('#in-trend-icon'), inTrendLabel: q('#in-trend-label'),
         inAh: q('#in-ah'), inDp: q('#in-dp'), inDpRow: q('#in-dp-row'), inVol: q('#in-vol'),
         inWinRow: q('#in-win-row'), inWin: q('#in-win'), inWinIcon: q('#in-win-icon'),
@@ -268,7 +264,7 @@ class BlushLueftungCard extends HTMLElement {
     const waterGrams = Math.abs(diff) * V;
     const heatLossWh = 0.34 * V * Math.abs(tempDiff);
     const heatLossText = c.show_heat_loss ? ` · ca. ${heatLossWh.toFixed(0)} Wh Wärmeverlust bei vollem Austausch` : '';
-    const whPerGram = excessGrams > 0.1 ? (heatLossWh * Math.min(1, fraction)) / excessGrams : Infinity;
+    const whPerGram = (diff > 0 && excessGrams > 0.1) ? heatLossWh / waterGrams : Infinity;
 
     const noTrend = { icon: 'mdi:trending-neutral', label: '' };
     const trendOut = c.show_trend ? this._trend(this._histOut, rhOut) : noTrend;
@@ -281,7 +277,6 @@ class BlushLueftungCard extends HTMLElement {
     ct.outTrendLabel.textContent = trendOut.label;
     ct.outAh.textContent = ahOut.toFixed(1) + ' g/m³';
     ct.outDp.textContent = dpOut.toFixed(1) + '°C';
-    ct.outWind.textContent = (wind !== null && !isNaN(wind)) ? wind.toFixed(1) + ' km/h' : '–';
     ct.inTemp.textContent = tIn.toFixed(1) + '°C';
     ct.inRhText.textContent = rhIn.toFixed(0) + '% ';
     ct.inTrendIcon.setAttribute('icon', trendIn.icon);
@@ -311,11 +306,9 @@ class BlushLueftungCard extends HTMLElement {
     ct.balanceBenefit.style.background = diff > 2 ? 'rgba(76,175,80,0.25)' : diff > 0.5 ? 'rgba(76,175,80,0.12)' : 'rgba(127,127,127,0.1)';
     ct.balanceCost.style.background = tempDiff > 15 ? 'rgba(229,57,53,0.22)' : tempDiff > 5 ? 'rgba(255,152,0,0.15)' : 'rgba(127,127,127,0.1)';
 
-    const windActive = c.show_wind && wind !== null && !isNaN(wind);
-    const windNote = (windActive && wind > 10) ? ` (${wind.toFixed(0)} km/h Wind eingerechnet)` : '';
     const afterText = `Nach vollem Luftaustausch ca. ${rhAfter.toFixed(0)}% rF innen`;
     const tooDryNote = rhAfter < c.min_humidity ? ` – unter ${c.min_humidity}%, also nicht zu lange lüften` : '';
-    const minutesNow = this._ventDurationMinutes(Math.abs(tempDiff), windActive ? wind : null, fraction);
+    const minutesNow = this._ventDurationMinutes(Math.abs(tempDiff), fraction);
 
     let icon, color, headline, sub, metric, needsVent = false;
     if (diff <= -0.5) {
@@ -348,7 +341,7 @@ class BlushLueftungCard extends HTMLElement {
       icon = 'mdi:window-open-variant';
       color = 'rgba(76,175,80,0.18)';
       headline = '✅ Lüften empfohlen';
-      sub = `Innen ${rhIn.toFixed(0)}% rF, Ziel ${c.target_humidity}%. Draußen ${diff.toFixed(1)} g/m³ trockener – ca. ${minutesNow.toFixed(0)} Min. stoßlüften${windNote}.`;
+      sub = `Innen ${rhIn.toFixed(0)}% rF, Ziel ${c.target_humidity}%. Draußen ${diff.toFixed(1)} g/m³ trockener – ca. ${minutesNow.toFixed(0)} Min. stoßlüften.`;
       metric = `Bis Zielwert ca. ${excessGrams.toFixed(0)} g Wasser raus${heatLossText} · ${afterText}${tooDryNote}.`;
       needsVent = true;
     }
@@ -390,7 +383,7 @@ class BlushLueftungCard extends HTMLElement {
           icon = 'mdi:timer-outline';
           color = 'rgba(76,175,80,0.18)';
           headline = `🪟 Lüften läuft – noch ca. ${this._fmtMin(Math.ceil(planned - openMin))}`;
-          sub = `Empfohlen waren ca. ${planned} Min. stoßlüften${windNote}.`;
+          sub = `Empfohlen waren ca. ${planned} Min. stoßlüften.`;
         } else if (openMin < planned * 2 + 5) {
           icon = 'mdi:window-closed-variant';
           color = 'rgba(255,152,0,0.22)';
@@ -442,7 +435,11 @@ class BlushLueftungCard extends HTMLElement {
 }
 
 class BlushLueftungCardEditor extends HTMLElement {
-  setConfig(config) { this._config = { ...BlushLueftungCard.getStubConfig(), ...config }; }
+  setConfig(config) {
+    // Veraltete Optionen (Wind, bis v0.2.0) beim Speichern im Editor entfernen
+    const { wind, show_wind, ...rest } = config;
+    this._config = { ...BlushLueftungCard.getStubConfig(), ...rest };
+  }
   get _schema() {
     return [
       { name: 'name', selector: { text: {} } },
@@ -450,7 +447,6 @@ class BlushLueftungCardEditor extends HTMLElement {
       { name: 'hum_out', required: true, selector: { entity: { domain: 'sensor', device_class: 'humidity' } } },
       { name: 'temp_in', required: true, selector: { entity: { domain: 'sensor', device_class: 'temperature' } } },
       { name: 'hum_in', required: true, selector: { entity: { domain: 'sensor', device_class: 'humidity' } } },
-      { name: 'wind', selector: { entity: { domain: 'sensor' } } },
       { name: 'window', selector: { entity: { domain: 'binary_sensor', multiple: true } } },
       { name: 'cooldown_minutes', selector: { number: { min: 0, max: 180, step: 5, mode: 'box', unit_of_measurement: 'Min.' } } },
       { name: 'room_volume_m3', selector: { number: { min: 1, max: 2000, step: 1, mode: 'box', unit_of_measurement: 'm³' } } },
@@ -463,7 +459,6 @@ class BlushLueftungCardEditor extends HTMLElement {
         { name: 'show_columns', selector: { boolean: {} } },
         { name: 'show_balance', selector: { boolean: {} } },
         { name: 'show_dewpoint', selector: { boolean: {} } },
-        { name: 'show_wind', selector: { boolean: {} } },
         { name: 'show_trend', selector: { boolean: {} } },
         { name: 'show_heat_loss', selector: { boolean: {} } },
         { name: 'show_mold_warning', selector: { boolean: {} } },
@@ -477,7 +472,6 @@ class BlushLueftungCardEditor extends HTMLElement {
       hum_out: 'Außen-Luftfeuchte-Sensor',
       temp_in: 'Innentemperatur-Sensor',
       hum_in: 'Innen-Luftfeuchte-Sensor',
-      wind: 'Windgeschwindigkeit-Sensor (optional, leer = keine Windkorrektur)',
       window: 'Fensterkontakt(e) (optional, mehrere möglich)',
       cooldown_minutes: 'Nachlaufzeit nach dem Lüften (nur mit Fensterkontakt)',
       room_volume_m3: 'Raumvolumen',
@@ -487,7 +481,6 @@ class BlushLueftungCardEditor extends HTMLElement {
       show_columns: 'Innen/Außen-Kästen anzeigen',
       show_balance: 'Nutzen/Kosten-Kacheln anzeigen',
       show_dewpoint: 'Taupunkt anzeigen',
-      show_wind: 'Windgeschwindigkeit anzeigen',
       show_trend: 'Feuchte-Trendpfeil anzeigen',
       show_heat_loss: 'Wärmeverlust (Wh) anzeigen',
       show_mold_warning: 'Schimmel-Warnung anzeigen',
