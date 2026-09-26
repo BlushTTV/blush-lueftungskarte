@@ -10,12 +10,20 @@ Die reine relative Luftfeuchtigkeit (%) ist beim Lüften irreführend, weil sie 
 
 ## Features
 
-- ✅ / ❌ / ➖ / ⚖️ — vier klare Empfehlungs-Zustände statt nur Ja/Nein
+- ✅ / 👍 / ❌ / ➖ / ⚖️ — klare Empfehlungs-Zustände statt nur Ja/Nein
+- **Ziel-Luftfeuchte** einstellbar: liegt der Raum schon darunter, heißt es "👍 Kein Lüftbedarf" statt Dauer-Lüften
+- Zeigt, auf welche Feuchte ein voller Luftaustausch den Raum bringen würde (mit Warnung, wenn es zu trocken wird)
 - Absolute Luftfeuchtigkeit (g/m³) und Taupunkt, innen und außen
-- Konkrete Wassermenge (g), die ein voller Luftaustausch entfernt/hinzufügt
+- Wassermenge (g), die bis zum Zielwert raus muss
 - Geschätzter Wärmeverlust (Wh) pro Luftaustausch
-- Stetige Lüftungsdauer-Formel (Stack-Effekt-Näherung), durch Windgeschwindigkeit korrigiert
+- Lüftungsdauer (Stack-Effekt-Näherung), durch Wind korrigiert und an den tatsächlichen Bedarf bis zum Zielwert angepasst
 - Kosten-Nutzen-Verhältnis (Wh pro Gramm entferntem Wasser) statt starrer Schwellenwerte
+- **Optional Fensterkontakt(e)**:
+  - Fenster offen → Countdown "Lüften läuft – noch ca. X Min.", dann "⏰ Jetzt Fenster schließen" und "⚠️ Fenster zu lange offen"
+  - "✅ Ziel erreicht – Fenster schließen", sobald die Zielfeuchte erreicht ist
+  - Warnung, wenn das Fenster offen ist, obwohl draußen die Luft feuchter ist
+  - Nach dem Schließen: "Zuletzt gelüftet vor X (Y lang)" aus dem HA-Verlauf
+  - Einstellbare Nachlaufzeit ("🕒 Gerade gelüftet"), weil die Feuchte nach dem Lüften kurz wieder ansteigt
 - Unabhängige Schimmel-Warnung (Richtwert 60 %/70 % relative Raumluftfeuchte)
 - Live-Trendpfeil für die Luftfeuchtigkeit (steigend/fallend/stabil, letzte 20 Min.)
 - Vollständiger visueller GUI-Editor (kein YAML nötig)
@@ -55,8 +63,12 @@ Karte hinzufügen → "Blush Lüftungsempfehlung" suchen → im visuellen Editor
 | Innentemperatur-Sensor | **Ja** | `sensor.*` mit `device_class: temperature` |
 | Innen-Luftfeuchte-Sensor | **Ja** | `sensor.*` mit `device_class: humidity` |
 | Windgeschwindigkeit-Sensor | Nein | Beeinflusst die Dauer-Schätzung; leer = keine Windkorrektur |
+| Fensterkontakt(e) | Nein | `binary_sensor.*` (on = offen), mehrere möglich. Leer = Karte funktioniert ohne Fensterlogik |
+| Nachlaufzeit (Min.) | Nein | Standard: 30. Nach dem Schließen so lange keine neue Lüftempfehlung (nur mit Fensterkontakt) |
 | Raumvolumen (m³) | Nein | Standard: 50 m³. Für genaue Wassermengen-/Wärmeverlust-Schätzung wichtig |
 | Volumen ist nur geschätzt | Nein | Zeigt einen dezenten Hinweis in der Karte |
+| Ziel-Luftfeuchte (%) | Nein | Standard: 55 %. Erst darüber wird Lüften wegen Feuchte empfohlen |
+| Untergrenze (%) | Nein | Standard: 40 %. Warnung, wenn Lüften den Raum darunter bringen würde |
 | 7 Anzeige-Schalter | Nein | Kästen, Nutzen/Kosten-Kacheln, Taupunkt, Wind, Trend, Wärmeverlust, Schimmel-Warnung einzeln ein-/ausschaltbar |
 
 ### Beispiel-YAML
@@ -69,8 +81,13 @@ hum_out: sensor.aussen_luftfeuchtigkeit
 temp_in: sensor.wohnzimmer_temperatur
 hum_in: sensor.wohnzimmer_luftfeuchtigkeit
 wind: sensor.aussen_windgeschwindigkeit
+window:
+  - binary_sensor.wohnzimmer_fenster
+cooldown_minutes: 30
 room_volume_m3: 92
 room_volume_is_estimate: true
+target_humidity: 55
+min_humidity: 40
 show_columns: true
 show_balance: true
 show_dewpoint: true
@@ -83,18 +100,21 @@ show_mold_warning: true
 ## Wie die Empfehlung berechnet wird
 
 1. **Absolute Luftfeuchtigkeit** (g/m³) wird aus Temperatur + relativer Feuchte berechnet (Magnus-Formel)
-2. **Differenz** (innen − außen) bestimmt die Grundrichtung:
-   - ≤ −0,5 g/m³ → ❌ Nicht lüften
-   - −0,5 … +0,5 g/m³ → ➖ Kein großer Unterschied
-   - \> +0,5 g/m³ → Nutzen vorhanden, weiter zu Schritt 3
-3. **Kosten-Nutzen-Verhältnis**: geschätzter Wärmeverlust (Wh, über die volumetrische Wärmekapazität von Luft ≈ 0,34 Wh/(m³·K)) geteilt durch die entfernte Wassermenge (g)
-   - \> 4 Wh/g → ⚖️ Abwägen – lohnt sich kaum
-   - ≤ 4 Wh/g → ✅ Lüften empfohlen, mit Dauer-Schätzung (`18 / √ΔT` Minuten, durch Wind verkürzt)
+2. Die Prüfung läuft in dieser Reihenfolge:
+   1. Außenluft absolut feuchter (Differenz ≤ −0,5 g/m³) → ❌ Nicht lüften
+   2. Innen-rF ≤ Ziel-Luftfeuchte → 👍 Kein Lüftbedarf
+   3. Kaum Unterschied (−0,5 … +0,5 g/m³) → ➖ Lüften bringt kaum etwas
+   4. **Kosten-Nutzen-Verhältnis**: anteiliger Wärmeverlust (Wh, über die volumetrische Wärmekapazität von Luft ≈ 0,34 Wh/(m³·K)) geteilt durch die Wassermenge bis zum Zielwert (g). Über 4 Wh/g → ⚖️ Abwägen
+   5. Sonst → ✅ Lüften empfohlen
+3. **Lüftungsdauer**: `18 / √ΔT` Minuten, durch Wind verkürzt und mit dem Anteil skaliert, der bis zum Zielwert nötig ist (3–25 Min.)
+4. **Mit Fensterkontakt**: Beim Öffnen wird die empfohlene Dauer festgehalten, danach laufen Countdown, "Jetzt schließen" (bis ca. doppelte Dauer) und "zu lange offen". Bei weniger als 5 °C Temperaturunterschied gibt es keine Schließ-Aufforderung, weil offen lassen dann kaum Heizenergie kostet.
 
 ## Bekannte Grenzen
 
 - **Kein Sensor-Frische-Check**: Ein eingefrorener Sensor (z. B. leere Batterie) würde unbemerkt mit einem alten Wert weiterrechnen. Ließe sich über `last_changed`/`last_updated` ergänzen — bewusst noch nicht eingebaut.
 - Die Lüftungsdauer- und Wärmeverlust-Formeln sind **plausible Näherungen**, keine Laborwerte. Echte Luftaustauschraten hängen zusätzlich von Fenstergröße, Öffnungsart (Kipp vs. ganz offen) und Windrichtung relativ zum Fenster ab — Werte, die ohne entsprechende Sensoren nicht erfassbar sind.
+- Ein Fensterkontakt unterscheidet nicht zwischen **gekippt** und **ganz offen**. Die Dauer-Empfehlung geht von Stoßlüften aus.
+- Die Nachlaufzeit ist ein fester Wert und hängt nicht vom tatsächlichen Wiederanstieg der Feuchte ab.
 - Die Schimmel-Warnung prüft nur den **aktuellen** Wert, nicht ob eine erhöhte Feuchte schon länger anhält.
 
 ## Lizenz
